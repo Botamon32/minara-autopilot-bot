@@ -190,11 +190,23 @@ class WalletMonitor:
         channel = msg.get("channel")
         if channel in ("pong", "subscriptionResponse"):
             return
+
+        # Log all non-ping messages for debugging
+        log.info("WS message for %s: %s", fmt_wallet(self.wallet), raw[:500])
+
         if channel != "userEvents":
             return
 
         data = msg.get("data", {})
-        fills = data.get("fills", [])
+
+        # data can be a list of events
+        if isinstance(data, list):
+            fills = []
+            for event in data:
+                fills.extend(event.get("fills", []))
+        else:
+            fills = data.get("fills", [])
+
         if not fills:
             return
 

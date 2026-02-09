@@ -43,6 +43,8 @@ TELEGRAM_CHAT_ID={your_chat_id}
 WALLET_ADDRESS={your_wallet_address}
 ```
 
+> **WALLET_ADDRESS について:** AutoPilotで利用しているHyperLiquidのウォレットアドレスはMinara姉さんにチャットで聞いてみてください。
+
 ### 4. 起動
 
 #### Docker（推奨）

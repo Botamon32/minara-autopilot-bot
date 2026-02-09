@@ -10,12 +10,14 @@ WebSocket常時接続が必要なため、**VPSやクラウドサーバー**で�
 
 ## セットアップ
 
+> **注意:** このBotは個人利用を想定しています。利用者ごとに自分専用のTelegram Botを作成し、自分のサーバーにデプロイしてください。Chat IDによるアクセス制限があるため、他人のBotは利用できません。
+
 ### 1. Telegram Botの作成
 
 1. Telegramで [@BotFather](https://t.me/BotFather) を開く
 2. `/newbot` を送信
-3. Bot名を入力（例: `HyperLiquid Monitor`）
-4. ユーザー名を入力（例: `hl_position_monitor_bot`）
+3. Bot名を入力（例: `MyHL Monitor`）
+4. ユーザー名を入力（例: `my_hl_monitor_bot`、末尾に `bot` が必須）
 5. 表示される **APIトークン** をメモ
 
 ### 2. Chat IDの取得
@@ -48,6 +50,15 @@ WALLET_ADDRESS={your_wallet_address}
 pip install -r requirements.txt
 python bot.py
 ```
+
+## コマンド
+
+| コマンド | 内容 |
+|----------|------|
+| `/position` | オープンポジション一覧 |
+| `/pnl` | ポジション＋未実現損益 |
+| `/balance` | ウォレット残高 |
+| `/help` | コマンド一覧 |
 
 ## 通知例
 

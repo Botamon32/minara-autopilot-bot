@@ -8,14 +8,14 @@ import asyncio
 import json
 import logging
 import os
-import signal
 import sys
 from dataclasses import dataclass
 
 import httpx
 import websockets
 from dotenv import load_dotenv
-from telegram import Bot
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 load_dotenv()
 
@@ -32,6 +32,8 @@ WS_URL = "wss://api.hyperliquid.xyz/ws"
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+
+http_client = httpx.AsyncClient(timeout=30)
 
 
 @dataclass
@@ -65,14 +67,19 @@ def parse_position(item: dict) -> Position | None:
     )
 
 
-async def fetch_positions(client: httpx.AsyncClient) -> dict[str, Position]:
-    """Fetch current positions via REST API."""
-    resp = await client.post(
+async def fetch_clearinghouse_state() -> dict:
+    """Fetch full clearinghouse state via REST API."""
+    resp = await http_client.post(
         REST_URL,
         json={"type": "clearinghouseState", "user": WALLET},
     )
     resp.raise_for_status()
-    data = resp.json()
+    return resp.json()
+
+
+async def fetch_positions() -> dict[str, Position]:
+    """Fetch current positions via REST API."""
+    data = await fetch_clearinghouse_state()
     positions: dict[str, Position] = {}
     for item in data.get("assetPositions", []):
         pos = parse_position(item)
@@ -85,6 +92,12 @@ def fmt_usd(value: float) -> str:
     """Format a number as USD."""
     sign = "+" if value > 0 else ""
     return f"{sign}${value:,.2f}" if value != 0 else "$0.00"
+
+
+def fmt_pct(value: float) -> str:
+    """Format a number as percentage."""
+    sign = "+" if value > 0 else ""
+    return f"{sign}{value:.2%}"
 
 
 def fmt_open(pos: Position) -> str:
@@ -100,7 +113,6 @@ def fmt_open(pos: Position) -> str:
 
 
 def fmt_close(coin: str, old: Position, new_positions: dict[str, Position]) -> str:
-    # If the coin still exists in new positions with 0 size, it was just closed
     return (
         f"🔴 POSITION CLOSED\n"
         f"Coin: {coin}\n"
@@ -125,63 +137,152 @@ def fmt_update(old: Position, new: Position) -> str:
     )
 
 
-async def send_telegram(bot: Bot, message: str) -> None:
+# --- Telegram Command Handlers ---
+
+
+def authorized(update: Update) -> bool:
+    """Check if the user is authorized."""
+    return str(update.effective_chat.id) == TELEGRAM_CHAT_ID
+
+
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not authorized(update):
+        return
+    await update.message.reply_text(
+        "🤖 MinaraAutoPilot Watch Bot\n\n"
+        "Commands:\n"
+        "/position - Open positions\n"
+        "/pnl - Positions & unrealized PnL\n"
+        "/balance - Wallet balance\n"
+        "/help - Show this message"
+    )
+
+
+async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not authorized(update):
+        return
+    await cmd_start(update, context)
+
+
+async def cmd_pnl(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not authorized(update):
+        return
+    try:
+        positions = await fetch_positions()
+        if not positions:
+            await update.message.reply_text("No open positions.")
+            return
+
+        total_pnl = 0.0
+        lines = ["📊 Current Positions\n"]
+        for pos in positions.values():
+            total_pnl += pos.unrealized_pnl
+            lines.append(
+                f"{'🟢' if pos.side == 'LONG' else '🔴'} {pos.coin} {pos.side}\n"
+                f"  Size: {pos.size} {pos.coin}\n"
+                f"  Entry: ${pos.entry_price:,.2f}\n"
+                f"  Leverage: {pos.leverage:.0f}x\n"
+                f"  Value: ${pos.position_value:,.2f}\n"
+                f"  PnL: {fmt_usd(pos.unrealized_pnl)} ({fmt_pct(pos.return_on_equity)})\n"
+            )
+        lines.append(f"Total Unrealized PnL: {fmt_usd(total_pnl)}")
+        await update.message.reply_text("\n".join(lines))
+    except Exception as e:
+        log.error("cmd_pnl error: %s", e)
+        await update.message.reply_text(f"Error: {e}")
+
+
+async def cmd_position(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not authorized(update):
+        return
+    try:
+        positions = await fetch_positions()
+        if not positions:
+            await update.message.reply_text("No open positions.")
+            return
+
+        lines = ["📋 Open Positions\n"]
+        for pos in positions.values():
+            lines.append(
+                f"{'🟢' if pos.side == 'LONG' else '🔴'} {pos.coin} {pos.side}\n"
+                f"  Size: {pos.size} {pos.coin}\n"
+                f"  Entry: ${pos.entry_price:,.2f}\n"
+                f"  Leverage: {pos.leverage:.0f}x\n"
+                f"  Value: ${pos.position_value:,.2f}\n"
+            )
+        lines.append(f"Total positions: {len(positions)}")
+        await update.message.reply_text("\n".join(lines))
+    except Exception as e:
+        log.error("cmd_position error: %s", e)
+        await update.message.reply_text(f"Error: {e}")
+
+
+async def cmd_balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not authorized(update):
+        return
+    try:
+        data = await fetch_clearinghouse_state()
+        margin = data.get("marginSummary", {})
+        account_value = float(margin.get("accountValue", "0"))
+        total_position = float(margin.get("totalNtlPos", "0"))
+        margin_used = float(margin.get("totalMarginUsed", "0"))
+        withdrawable = float(data.get("withdrawable", "0"))
+
+        await update.message.reply_text(
+            f"💰 Wallet Balance\n\n"
+            f"Account Value: ${account_value:,.2f}\n"
+            f"Position Value: ${total_position:,.2f}\n"
+            f"Margin Used: ${margin_used:,.2f}\n"
+            f"Withdrawable: ${withdrawable:,.2f}"
+        )
+    except Exception as e:
+        log.error("cmd_balance error: %s", e)
+        await update.message.reply_text(f"Error: {e}")
+
+
+# --- WebSocket Monitor ---
+
+
+async def send_telegram(app: Application, message: str) -> None:
     """Send a message via Telegram."""
     try:
-        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+        await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
         log.info("Telegram notification sent")
     except Exception as e:
         log.error("Failed to send Telegram message: %s", e)
 
 
 async def compare_and_notify(
-    bot: Bot,
+    app: Application,
     old_positions: dict[str, Position],
     new_positions: dict[str, Position],
 ) -> None:
     """Compare positions and send notifications for changes."""
-    # Detect new / opened positions
     for coin, pos in new_positions.items():
         if coin not in old_positions:
-            await send_telegram(bot, fmt_open(pos))
+            await send_telegram(app, fmt_open(pos))
 
-    # Detect closed positions
     for coin, old_pos in old_positions.items():
         if coin not in new_positions:
-            await send_telegram(bot, fmt_close(coin, old_pos, new_positions))
+            await send_telegram(app, fmt_close(coin, old_pos, new_positions))
 
-    # Detect updated positions (size or side change)
     for coin in old_positions.keys() & new_positions.keys():
         old = old_positions[coin]
         new = new_positions[coin]
         if old.size != new.size or old.side != new.side:
-            await send_telegram(bot, fmt_update(old, new))
+            await send_telegram(app, fmt_update(old, new))
 
 
-async def run() -> None:
-    if not TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN == "your_bot_token_here":
-        log.error("TELEGRAM_BOT_TOKEN is not set in .env")
-        sys.exit(1)
-    if not TELEGRAM_CHAT_ID or TELEGRAM_CHAT_ID == "your_chat_id_here":
-        log.error("TELEGRAM_CHAT_ID is not set in .env")
-        sys.exit(1)
-    if not WALLET:
-        log.error("WALLET_ADDRESS is not set in .env")
-        sys.exit(1)
-
-    bot = Bot(token=TELEGRAM_BOT_TOKEN)
-    client = httpx.AsyncClient(timeout=30)
-
-    # Fetch initial positions
-    log.info("Fetching initial positions for %s ...", WALLET)
-    positions = await fetch_positions(client)
+async def ws_monitor(app: Application) -> None:
+    """WebSocket monitor that runs alongside the Telegram bot."""
+    positions = await fetch_positions()
     log.info(
         "Initial positions: %s",
         [f"{p.coin} {p.side} {p.size}" for p in positions.values()] or "none",
     )
 
     await send_telegram(
-        bot,
+        app,
         f"🤖 Bot started\nMonitoring: {WALLET[:10]}...{WALLET[-6:]}\n"
         f"Current positions: {len(positions)}",
     )
@@ -198,7 +299,6 @@ async def run() -> None:
                 log.info("Subscribed to userEvents for %s", WALLET)
 
                 async def send_ping():
-                    """Send HyperLiquid application-level ping every 50s."""
                     while True:
                         await asyncio.sleep(50)
                         await ws.send(json.dumps({"method": "ping"}))
@@ -210,7 +310,6 @@ async def run() -> None:
                         try:
                             msg = json.loads(raw)
                         except json.JSONDecodeError:
-                            log.warning("Non-JSON message: %s", raw[:200])
                             continue
 
                         channel = msg.get("channel")
@@ -230,11 +329,9 @@ async def run() -> None:
                             [(f.get("coin"), f.get("side"), f.get("sz")) for f in fills],
                         )
 
-                        # Small delay to let the position state settle
                         await asyncio.sleep(1)
-
-                        new_positions = await fetch_positions(client)
-                        await compare_and_notify(bot, positions, new_positions)
+                        new_positions = await fetch_positions()
+                        await compare_and_notify(app, positions, new_positions)
                         positions = new_positions
                 finally:
                     ping_task.cancel()
@@ -247,23 +344,31 @@ async def run() -> None:
         await asyncio.sleep(5)
 
 
+async def post_init(app: Application) -> None:
+    """Start WebSocket monitor after Telegram bot is initialized."""
+    app.create_task(ws_monitor(app))
+
+
 def main() -> None:
-    loop = asyncio.new_event_loop()
+    if not TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN == "your_bot_token_here":
+        log.error("TELEGRAM_BOT_TOKEN is not set in .env")
+        sys.exit(1)
+    if not TELEGRAM_CHAT_ID or TELEGRAM_CHAT_ID == "your_chat_id_here":
+        log.error("TELEGRAM_CHAT_ID is not set in .env")
+        sys.exit(1)
+    if not WALLET:
+        log.error("WALLET_ADDRESS is not set in .env")
+        sys.exit(1)
 
-    def shutdown(sig: int, _frame) -> None:
-        log.info("Received signal %s, shutting down ...", signal.Signals(sig).name)
-        for task in asyncio.all_tasks(loop):
-            task.cancel()
+    app = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("help", cmd_help))
+    app.add_handler(CommandHandler("position", cmd_position))
+    app.add_handler(CommandHandler("pnl", cmd_pnl))
+    app.add_handler(CommandHandler("balance", cmd_balance))
 
-    signal.signal(signal.SIGINT, shutdown)
-    signal.signal(signal.SIGTERM, shutdown)
-
-    try:
-        loop.run_until_complete(run())
-    except asyncio.CancelledError:
-        log.info("Bot stopped.")
-    finally:
-        loop.close()
+    log.info("Starting bot ...")
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":

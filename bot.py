@@ -320,7 +320,7 @@ async def ws_monitor(app: Application) -> None:
                     while True:
                         await asyncio.sleep(50)
                         await ws.send(json.dumps({"method": "ping"}))
-                        log.debug("Sent ping")
+                        log.info("Sent ping (WS alive)")
 
                 ping_task = asyncio.create_task(send_ping())
                 try:
@@ -364,7 +364,16 @@ async def ws_monitor(app: Application) -> None:
 
 async def post_init(app: Application) -> None:
     """Start WebSocket monitor after Telegram bot is initialized."""
-    app.create_task(ws_monitor(app))
+
+    async def ws_wrapper() -> None:
+        try:
+            await ws_monitor(app)
+        except asyncio.CancelledError:
+            log.info("WebSocket monitor cancelled")
+        except Exception as e:
+            log.error("WebSocket monitor crashed: %s", e, exc_info=True)
+
+    app.create_task(ws_wrapper())
 
 
 def main() -> None:

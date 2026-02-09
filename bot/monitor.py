@@ -194,7 +194,7 @@ class WalletMonitor:
         # Log all non-ping messages for debugging
         log.info("WS message for %s: %s", fmt_wallet(self.wallet), raw[:500])
 
-        if channel != "userEvents":
+        if channel not in ("userEvents", "user"):
             return
 
         data = msg.get("data", {})

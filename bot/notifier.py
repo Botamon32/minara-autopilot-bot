@@ -4,6 +4,7 @@ import asyncio
 import logging
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.constants import ParseMode
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
 from .config import config
@@ -30,13 +31,14 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     wallets = ", ".join(fmt_wallet(w) for w in config.WALLET_ADDRESSES)
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
+        parse_mode=ParseMode.HTML,
         text=(
-            f"🤖 MinaraAutoPilot Watch Bot\n\n"
-            f"Monitoring: {wallets}\n\n"
-            f"Commands:\n"
-            f"/position - Positions & unrealized PnL\n"
-            f"/balance - Wallet balance\n"
-            f"/help - Show this message"
+            f"🤖 <b>MinaraAutoPilot Watch Bot</b>\n\n"
+            f"👛 Monitoring: {wallets}\n\n"
+            f"📋 Commands:\n"
+            f"  /position — 📊 Positions &amp; PnL\n"
+            f"  /balance — 💰 Wallet balance\n"
+            f"  /help — ❓ Show this message"
         ),
     )
 
@@ -56,7 +58,8 @@ async def cmd_position(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             positions = await fetch_positions(wallet)
             text = fmt_position_summary(wallet, positions)
             await context.bot.send_message(
-                chat_id=chat_id, text=text, reply_markup=SHORTCUT_KEYBOARD,
+                chat_id=chat_id, text=text,
+                parse_mode=ParseMode.HTML, reply_markup=SHORTCUT_KEYBOARD,
             )
     except Exception as e:
         log.error("cmd_position error: %s", e)
@@ -72,7 +75,8 @@ async def cmd_balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             data = await fetch_clearinghouse_state(wallet)
             text = fmt_balance(wallet, data)
             await context.bot.send_message(
-                chat_id=chat_id, text=text, reply_markup=SHORTCUT_KEYBOARD,
+                chat_id=chat_id, text=text,
+                parse_mode=ParseMode.HTML, reply_markup=SHORTCUT_KEYBOARD,
             )
     except Exception as e:
         log.error("cmd_balance error: %s", e)
@@ -128,6 +132,7 @@ class TelegramNotifier:
                 await self.app.bot.send_message(
                     chat_id=config.TELEGRAM_CHAT_ID,
                     text=message,
+                    parse_mode=ParseMode.HTML,
                     reply_markup=SHORTCUT_KEYBOARD,
                 )
                 log.info("Notification sent: %s", message[:50])

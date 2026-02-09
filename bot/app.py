@@ -4,6 +4,8 @@ import asyncio
 import logging
 import logging.handlers
 
+from telegram.constants import ParseMode
+
 from .config import config
 from .formatter import fmt_wallet
 from .monitor import WalletMonitor
@@ -79,7 +81,12 @@ def run() -> None:
         wallets_str = ", ".join(fmt_wallet(w) for w in config.WALLET_ADDRESSES)
         await app.bot.send_message(
             chat_id=config.TELEGRAM_CHAT_ID,
-            text=f"🤖 Bot started\nMonitoring: {wallets_str}\nWallets: {len(config.WALLET_ADDRESSES)}",
+            parse_mode=ParseMode.HTML,
+            text=(
+                f"🚀 <b>Bot Started</b>\n"
+                f"👛 Monitoring: {wallets_str}\n"
+                f"📡 Wallets: {len(config.WALLET_ADDRESSES)}"
+            ),
         )
 
     notifier.app.post_init = combined_post_init

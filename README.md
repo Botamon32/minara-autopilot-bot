@@ -117,39 +117,50 @@ tail -f bot.log
 ## 通知例
 
 ```
-🟢 POSITION OPENED
-Wallet: 0x0485...fce8
-Coin: ETH
-Side: LONG
-Size: 1.5 ETH
-Entry: $3,245.50
-Leverage: 10x
-Position Value: $4,868.25
+🟢🟢🟢 POSITION OPENED 🟢🟢🟢
+━━━━━━━━━━━━━━━━━━
+👛 0x0485...fce8
+🪙 ETH — 🟢 LONG
+📏 Size: 1.5 ETH
+💵 Entry: $3,245.50
+⚡ Leverage: 10x
+💎 Value: $4,868.25
 [📊 Position] [💰 Balance]
 
-🔴 POSITION CLOSED
-Wallet: 0x0485...fce8
-Coin: BTC
-Side was: LONG
-Entry was: $95,000.00
-Size was: 0.5 BTC
-Realized PnL: +$245.30
+🔴🔴🔴 POSITION CLOSED 🔴🔴🔴
+━━━━━━━━━━━━━━━━━━
+👛 0x0485...fce8
+🪙 BTC
+📊 Side: 🟢 LONG → Closed
+💵 Entry: $95,000.00
+📏 Size: 0.5 BTC
+💰 Realized PnL: 🟢 +$245.30
 [📊 Position] [💰 Balance]
 
-🔄 POSITION UPDATED (INCREASED)
-Wallet: 0x0485...fce8
-Coin: ETH
-Side: LONG
-Size: 1.5 → 2.0 ETH
-Entry: $3,245.50 → $3,300.00
-Leverage: 10x
-Position Value: $6,600.00
-Unrealized PnL: +$120.50
+📈📈📈 POSITION INCREASED 📈📈📈
+━━━━━━━━━━━━━━━━━━
+👛 0x0485...fce8
+🪙 ETH — 🟢 LONG
+📏 Size: 1.5 → 2.0 ETH
+💵 Entry: $3,245.50 → $3,300.00
+⚡ Leverage: 10x
+💎 Value: $6,600.00
+💰 Unrealized PnL: 🟢 +$120.50
+[📊 Position] [💰 Balance]
+
+🔴🔴🔴 POSITION CLOSED 🔴🔴🔴
+━━━━━━━━━━━━━━━━━━
+👛 0x0485...fce8
+🪙 SOL
+📊 Side: 🟢 LONG → Closed
+💵 Entry: $180.00
+📏 Size: 10.0 SOL
+💰 Realized PnL: 🔴 -$120.45
 [📊 Position] [💰 Balance]
 
 ⚠️ Bot Alert
 WebSocket disconnected for 0x0485...fce8
-Reconnecting (attempt 5, next retry in 80.0s)
+Reconnecting (attempt 3, next retry in 20.0s)
 [📊 Position] [💰 Balance]
 ```
 

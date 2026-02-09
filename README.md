@@ -1,4 +1,4 @@
-# HyperLiquid Position Monitor Telegram Bot
+# MinaraAutoPilot Watch Bot
 
 MinaraAIのAutoPilotが行うHyperLiquid上のポジション変更（オープン/クローズ/更新）をリアルタイムで検知し、Telegramに通知するBotです。
 
@@ -32,7 +32,6 @@ WebSocket常時接続が必要なため、**VPSやクラウドサーバー**で�
 ### 3. 環境設定
 
 ```bash
-cd ~/hyperliquid-telegram-bot
 cp .env.example .env
 ```
 
@@ -44,7 +43,20 @@ TELEGRAM_CHAT_ID={your_chat_id}
 WALLET_ADDRESS={your_wallet_address}
 ```
 
-### 4. インストールと起動
+### 4. 起動
+
+#### Docker（推奨）
+
+```bash
+docker build -t minara-autopilot-bot .
+docker run -d --name minara-bot --restart=always \
+  -e TELEGRAM_BOT_TOKEN="{your_bot_token}" \
+  -e TELEGRAM_CHAT_ID="{your_chat_id}" \
+  -e WALLET_ADDRESS="{your_wallet_address}" \
+  minara-autopilot-bot
+```
+
+#### ローカル
 
 ```bash
 pip install -r requirements.txt
@@ -55,10 +67,11 @@ python bot.py
 
 | コマンド | 内容 |
 |----------|------|
-| `/position` | オープンポジション一覧 |
-| `/pnl` | ポジション＋未実現損益 |
+| `/position` | ポジション一覧＋未実現損益 |
 | `/balance` | ウォレット残高 |
 | `/help` | コマンド一覧 |
+
+通知メッセージやコマンド結果の下にショートカットボタンが表示されます。
 
 ## 通知例
 
@@ -70,12 +83,15 @@ Size: 1.5 ETH
 Entry: $3,245.50
 Leverage: 10x
 Position Value: $4,868.25
+[📊 Position] [💰 Balance]
 
 🔴 POSITION CLOSED
 Coin: BTC
 Side was: LONG
 Entry was: $95,000.00
 Size was: 0.5 BTC
+Realized PnL: +$245.30
+[📊 Position] [💰 Balance]
 
 🔄 POSITION UPDATED (INCREASED)
 Coin: ETH
@@ -85,6 +101,7 @@ Entry: $3,245.50 → $3,300.00
 Leverage: 10x
 Position Value: $6,600.00
 Unrealized PnL: +$120.50
+[📊 Position] [💰 Balance]
 ```
 
 ## 動作の仕組み
@@ -92,15 +109,5 @@ Unrealized PnL: +$120.50
 1. 起動時にREST APIで現在のポジション一覧を取得
 2. WebSocket (`wss://api.hyperliquid.xyz/ws`) で `userEvents` をsubscribe
 3. fill（約定）イベント受信時にREST APIで最新ポジションを取得
-4. 前回状態と比較して変更を検知 → Telegramに通知
-
-## バックグラウンド実行
-
-```bash
-nohup python bot.py > bot.log 2>&1 &
-```
-
-ログ確認:
-```bash
-tail -f bot.log
-```
+4. 前回状態と比較して変更を検知 → Telegramに通知（Realized PnL含む）
+5. Chat ID認証により、Bot所有者のみがコマンドを使用可能

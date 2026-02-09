@@ -14,8 +14,8 @@ from dataclasses import dataclass
 import httpx
 import websockets
 from dotenv import load_dotenv
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
 load_dotenv()
 
@@ -112,14 +112,18 @@ def fmt_open(pos: Position) -> str:
     )
 
 
-def fmt_close(coin: str, old: Position, new_positions: dict[str, Position]) -> str:
-    return (
-        f"🔴 POSITION CLOSED\n"
-        f"Coin: {coin}\n"
-        f"Side was: {old.side}\n"
-        f"Entry was: ${old.entry_price:,.2f}\n"
-        f"Size was: {old.size} {coin}"
-    )
+def fmt_close(coin: str, old: Position, realized_pnl: float | None) -> str:
+    pnl_line = f"Realized PnL: {fmt_usd(realized_pnl)}" if realized_pnl is not None else ""
+    lines = [
+        f"🔴 POSITION CLOSED",
+        f"Coin: {coin}",
+        f"Side was: {old.side}",
+        f"Entry was: ${old.entry_price:,.2f}",
+        f"Size was: {old.size} {coin}",
+    ]
+    if pnl_line:
+        lines.append(pnl_line)
+    return "\n".join(lines)
 
 
 def fmt_update(old: Position, new: Position) -> str:
@@ -151,8 +155,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "🤖 MinaraAutoPilot Watch Bot\n\n"
         "Commands:\n"
-        "/position - Open positions\n"
-        "/pnl - Positions & unrealized PnL\n"
+        "/position - Positions & unrealized PnL\n"
         "/balance - Wallet balance\n"
         "/help - Show this message"
     )
@@ -164,13 +167,14 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await cmd_start(update, context)
 
 
-async def cmd_pnl(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def cmd_position(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not authorized(update):
         return
+    chat_id = update.effective_chat.id
     try:
         positions = await fetch_positions()
         if not positions:
-            await update.message.reply_text("No open positions.")
+            await context.bot.send_message(chat_id=chat_id, text="No open positions.")
             return
 
         total_pnl = 0.0
@@ -186,40 +190,16 @@ async def cmd_pnl(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 f"  PnL: {fmt_usd(pos.unrealized_pnl)} ({fmt_pct(pos.return_on_equity)})\n"
             )
         lines.append(f"Total Unrealized PnL: {fmt_usd(total_pnl)}")
-        await update.message.reply_text("\n".join(lines))
-    except Exception as e:
-        log.error("cmd_pnl error: %s", e)
-        await update.message.reply_text(f"Error: {e}")
-
-
-async def cmd_position(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not authorized(update):
-        return
-    try:
-        positions = await fetch_positions()
-        if not positions:
-            await update.message.reply_text("No open positions.")
-            return
-
-        lines = ["📋 Open Positions\n"]
-        for pos in positions.values():
-            lines.append(
-                f"{'🟢' if pos.side == 'LONG' else '🔴'} {pos.coin} {pos.side}\n"
-                f"  Size: {pos.size} {pos.coin}\n"
-                f"  Entry: ${pos.entry_price:,.2f}\n"
-                f"  Leverage: {pos.leverage:.0f}x\n"
-                f"  Value: ${pos.position_value:,.2f}\n"
-            )
-        lines.append(f"Total positions: {len(positions)}")
-        await update.message.reply_text("\n".join(lines))
+        await context.bot.send_message(chat_id=chat_id, text="\n".join(lines), reply_markup=SHORTCUT_KEYBOARD)
     except Exception as e:
         log.error("cmd_position error: %s", e)
-        await update.message.reply_text(f"Error: {e}")
+        await context.bot.send_message(chat_id=chat_id, text=f"Error: {e}")
 
 
 async def cmd_balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not authorized(update):
         return
+    chat_id = update.effective_chat.id
     try:
         data = await fetch_clearinghouse_state()
         margin = data.get("marginSummary", {})
@@ -228,25 +208,53 @@ async def cmd_balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         margin_used = float(margin.get("totalMarginUsed", "0"))
         withdrawable = float(data.get("withdrawable", "0"))
 
-        await update.message.reply_text(
-            f"💰 Wallet Balance\n\n"
-            f"Account Value: ${account_value:,.2f}\n"
-            f"Position Value: ${total_position:,.2f}\n"
-            f"Margin Used: ${margin_used:,.2f}\n"
-            f"Withdrawable: ${withdrawable:,.2f}"
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f"💰 Wallet Balance\n\n"
+                f"Account Value: ${account_value:,.2f}\n"
+                f"Position Value: ${total_position:,.2f}\n"
+                f"Margin Used: ${margin_used:,.2f}\n"
+                f"Withdrawable: ${withdrawable:,.2f}"
+            ),
+            reply_markup=SHORTCUT_KEYBOARD,
         )
     except Exception as e:
         log.error("cmd_balance error: %s", e)
-        await update.message.reply_text(f"Error: {e}")
+        await context.bot.send_message(chat_id=chat_id, text=f"Error: {e}")
+
+
+async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle inline keyboard button presses."""
+    query = update.callback_query
+    if str(query.message.chat_id) != TELEGRAM_CHAT_ID:
+        return
+    await query.answer()
+    if query.data == "position":
+        await cmd_position(update, context)
+    elif query.data == "balance":
+        await cmd_balance(update, context)
 
 
 # --- WebSocket Monitor ---
 
 
-async def send_telegram(app: Application, message: str) -> None:
+SHORTCUT_KEYBOARD = InlineKeyboardMarkup([
+    [
+        InlineKeyboardButton("📊 Position", callback_data="position"),
+        InlineKeyboardButton("💰 Balance", callback_data="balance"),
+    ]
+])
+
+
+async def send_telegram(app: Application, message: str, with_buttons: bool = False) -> None:
     """Send a message via Telegram."""
     try:
-        await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+        await app.bot.send_message(
+            chat_id=TELEGRAM_CHAT_ID,
+            text=message,
+            reply_markup=SHORTCUT_KEYBOARD if with_buttons else None,
+        )
         log.info("Telegram notification sent")
     except Exception as e:
         log.error("Failed to send Telegram message: %s", e)
@@ -256,21 +264,31 @@ async def compare_and_notify(
     app: Application,
     old_positions: dict[str, Position],
     new_positions: dict[str, Position],
+    fills: list[dict],
 ) -> None:
     """Compare positions and send notifications for changes."""
+    # Build realized PnL map from fills
+    realized_pnl: dict[str, float] = {}
+    for fill in fills:
+        coin = fill.get("coin", "")
+        closed = float(fill.get("closedPnl", "0"))
+        if closed != 0:
+            realized_pnl[coin] = realized_pnl.get(coin, 0.0) + closed
+
     for coin, pos in new_positions.items():
         if coin not in old_positions:
-            await send_telegram(app, fmt_open(pos))
+            await send_telegram(app, fmt_open(pos), with_buttons=True)
 
     for coin, old_pos in old_positions.items():
         if coin not in new_positions:
-            await send_telegram(app, fmt_close(coin, old_pos, new_positions))
+            pnl = realized_pnl.get(coin)
+            await send_telegram(app, fmt_close(coin, old_pos, pnl), with_buttons=True)
 
     for coin in old_positions.keys() & new_positions.keys():
         old = old_positions[coin]
         new = new_positions[coin]
         if old.size != new.size or old.side != new.side:
-            await send_telegram(app, fmt_update(old, new))
+            await send_telegram(app, fmt_update(old, new), with_buttons=True)
 
 
 async def ws_monitor(app: Application) -> None:
@@ -326,12 +344,12 @@ async def ws_monitor(app: Application) -> None:
                         log.info(
                             "Received %d fill(s): %s",
                             len(fills),
-                            [(f.get("coin"), f.get("side"), f.get("sz")) for f in fills],
+                            [(f.get("coin"), f.get("side"), f.get("sz"), f.get("closedPnl")) for f in fills],
                         )
 
                         await asyncio.sleep(1)
                         new_positions = await fetch_positions()
-                        await compare_and_notify(app, positions, new_positions)
+                        await compare_and_notify(app, positions, new_positions, fills)
                         positions = new_positions
                 finally:
                     ping_task.cancel()
@@ -364,8 +382,8 @@ def main() -> None:
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("position", cmd_position))
-    app.add_handler(CommandHandler("pnl", cmd_pnl))
     app.add_handler(CommandHandler("balance", cmd_balance))
+    app.add_handler(CallbackQueryHandler(callback_handler))
 
     log.info("Starting bot ...")
     app.run_polling(drop_pending_updates=True)

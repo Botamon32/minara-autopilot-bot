@@ -35,37 +35,44 @@ class StateStore:
 
     def save_positions(self, wallet: str, positions: dict[str, Position]) -> None:
         """Save current positions for a wallet."""
-        with self._conn() as conn:
-            conn.execute("DELETE FROM positions WHERE wallet = ?", (wallet,))
-            for coin, pos in positions.items():
-                data = json.dumps({
-                    "coin": pos.coin,
-                    "size": pos.size,
-                    "side": pos.side,
-                    "entry_price": pos.entry_price,
-                    "leverage": pos.leverage,
-                    "position_value": pos.position_value,
-                    "unrealized_pnl": pos.unrealized_pnl,
-                    "return_on_equity": pos.return_on_equity,
-                })
-                conn.execute(
-                    "INSERT INTO positions (wallet, coin, data) VALUES (?, ?, ?)",
-                    (wallet, coin, data),
-                )
+        try:
+            with self._conn() as conn:
+                conn.execute("DELETE FROM positions WHERE wallet = ?", (wallet,))
+                for coin, pos in positions.items():
+                    data = json.dumps({
+                        "coin": pos.coin,
+                        "size": pos.size,
+                        "side": pos.side,
+                        "entry_price": pos.entry_price,
+                        "leverage": pos.leverage,
+                        "position_value": pos.position_value,
+                        "unrealized_pnl": pos.unrealized_pnl,
+                        "return_on_equity": pos.return_on_equity,
+                    })
+                    conn.execute(
+                        "INSERT INTO positions (wallet, coin, data) VALUES (?, ?, ?)",
+                        (wallet, coin, data),
+                    )
+        except sqlite3.Error as e:
+            log.error("Failed to save positions for %s: %s", wallet, e)
 
     def load_positions(self, wallet: str) -> dict[str, Position] | None:
         """Load saved positions for a wallet. Returns None if no saved state."""
-        with self._conn() as conn:
-            rows = conn.execute(
-                "SELECT coin, data FROM positions WHERE wallet = ?", (wallet,)
-            ).fetchall()
-        if not rows:
+        try:
+            with self._conn() as conn:
+                rows = conn.execute(
+                    "SELECT coin, data FROM positions WHERE wallet = ?", (wallet,)
+                ).fetchall()
+            if not rows:
+                return None
+            positions: dict[str, Position] = {}
+            for coin, data_str in rows:
+                d = json.loads(data_str)
+                positions[coin] = Position(**d)
+            return positions
+        except sqlite3.Error as e:
+            log.error("Failed to load positions for %s: %s", wallet, e)
             return None
-        positions: dict[str, Position] = {}
-        for coin, data_str in rows:
-            d = json.loads(data_str)
-            positions[coin] = Position(**d)
-        return positions
 
     def clear(self, wallet: str) -> None:
         """Clear saved positions for a wallet."""

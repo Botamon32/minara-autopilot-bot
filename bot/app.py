@@ -65,6 +65,13 @@ def run() -> None:
                         "Monitor for %s crashed: %s",
                         fmt_wallet(m.wallet), e, exc_info=True,
                     )
+                    try:
+                        await app.bot.send_message(
+                            chat_id=config.TELEGRAM_CHAT_ID,
+                            text=f"⚠️ Bot Alert\nMonitor crashed for {fmt_wallet(m.wallet)}\nError: {e}",
+                        )
+                    except Exception:
+                        log.error("Failed to send crash alert")
 
             app.create_task(run_monitor())
 

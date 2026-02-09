@@ -76,6 +76,8 @@ def diff_positions(
 class WalletMonitor:
     """Monitors a single wallet via WebSocket with exponential backoff."""
 
+    ALERT_AFTER_ATTEMPTS = 3  # Send Telegram alert after this many consecutive failures
+
     def __init__(
         self,
         wallet: str,
@@ -87,6 +89,7 @@ class WalletMonitor:
         self.notify_queue = on_notify
         self.positions: dict[str, Position] = {}
         self._delay = config.RECONNECT_BASE_DELAY
+        self._reconnect_attempts = 0
 
     async def start(self) -> None:
         """Initialize positions and start monitoring."""
@@ -129,8 +132,9 @@ class WalletMonitor:
                     await ws.send(subscribe_msg)
                     log.info("Subscribed to userEvents for %s", fmt_wallet(self.wallet))
 
-                    # Reset delay on successful connection
+                    # Reset on successful connection
                     self._delay = config.RECONNECT_BASE_DELAY
+                    self._reconnect_attempts = 0
 
                     ping_task = asyncio.create_task(self._ping_loop(ws))
                     try:
@@ -151,9 +155,21 @@ class WalletMonitor:
                 )
 
             # Exponential backoff with jitter
+            self._reconnect_attempts += 1
             jitter = random.uniform(0, self._delay * 0.1)
             wait = self._delay + jitter
-            log.info("Reconnecting %s in %.1fs ...", fmt_wallet(self.wallet), wait)
+            log.info("Reconnecting %s in %.1fs (attempt %d) ...",
+                     fmt_wallet(self.wallet), wait, self._reconnect_attempts)
+
+            # Alert via Telegram after repeated failures
+            if self._reconnect_attempts == self.ALERT_AFTER_ATTEMPTS:
+                await self.notify_queue.put(
+                    f"⚠️ Bot Alert\n"
+                    f"WebSocket disconnected for {fmt_wallet(self.wallet)}\n"
+                    f"Reconnecting (attempt {self._reconnect_attempts}, "
+                    f"next retry in {wait:.1f}s)"
+                )
+
             await asyncio.sleep(wait)
             self._delay = min(self._delay * 2, config.RECONNECT_MAX_DELAY)
 

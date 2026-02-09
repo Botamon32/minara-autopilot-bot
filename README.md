@@ -117,7 +117,7 @@ tail -f bot.log
 ## 通知例
 
 ```
-🟢🟢🟢 POSITION OPENED 🟢🟢🟢
+🔔🔔🔔 POSITION OPENED 🔔🔔🔔
 ━━━━━━━━━━━━━━━━━━
 0x0485...fce8
 ETH — 📈 LONG
@@ -127,7 +127,7 @@ Leverage: 10x
 Value: $4,868.25
 [📊 Position] [💰 Balance]
 
-🔴🔴🔴 POSITION CLOSED 🔴🔴🔴
+🔔🔔🔔 POSITION CLOSED 🔔🔔🔔
 ━━━━━━━━━━━━━━━━━━
 0x0485...fce8
 BTC
@@ -148,7 +148,7 @@ Value: $6,600.00
 PnL: 🟢 +$120.50
 [📊 Position] [💰 Balance]
 
-🔴🔴🔴 POSITION CLOSED 🔴🔴🔴
+🔔🔔🔔 POSITION CLOSED 🔔🔔🔔
 ━━━━━━━━━━━━━━━━━━
 0x0485...fce8
 SOL

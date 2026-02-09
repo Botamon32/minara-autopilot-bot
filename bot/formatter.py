@@ -47,7 +47,7 @@ def fmt_side(side: str) -> str:
 
 def fmt_open(wallet: str, pos: Position) -> str:
     return (
-        f"🟢🟢🟢 <b>POSITION OPENED</b> 🟢🟢🟢\n"
+        f"🔔🔔🔔 <b>POSITION OPENED</b> 🔔🔔🔔\n"
         f"{LINE}\n"
         f"{fmt_wallet(wallet)}\n"
         f"{escape(pos.coin)} — {fmt_side(pos.side)}\n"
@@ -60,7 +60,7 @@ def fmt_open(wallet: str, pos: Position) -> str:
 
 def fmt_close(wallet: str, coin: str, old: Position, realized_pnl: float | None) -> str:
     lines = [
-        f"🔴🔴🔴 <b>POSITION CLOSED</b> 🔴🔴🔴",
+        f"🔔🔔🔔 <b>POSITION CLOSED</b> 🔔🔔🔔",
         LINE,
         fmt_wallet(wallet),
         f"{escape(coin)}",

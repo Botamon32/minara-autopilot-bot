@@ -44,8 +44,8 @@ def diff_positions(
     old: dict[str, Position],
     new: dict[str, Position],
     fills: list[dict],
-) -> list[str]:
-    """Compare positions and return notification messages."""
+) -> list[tuple[str, str | None]]:
+    """Compare positions and return (message, coin) tuples."""
     # Build realized PnL map from fills
     realized_pnl: dict[str, float] = {}
     for fill in fills:
@@ -54,21 +54,21 @@ def diff_positions(
         if closed != 0:
             realized_pnl[coin] = realized_pnl.get(coin, 0.0) + closed
 
-    messages: list[str] = []
+    messages: list[tuple[str, str | None]] = []
 
     for coin, pos in new.items():
         if coin not in old:
-            messages.append(fmt_open(wallet, pos))
+            messages.append((fmt_open(wallet, pos), coin))
 
     for coin, old_pos in old.items():
         if coin not in new:
             pnl = realized_pnl.get(coin)
-            messages.append(fmt_close(wallet, coin, old_pos, pnl))
+            messages.append((fmt_close(wallet, coin, old_pos, pnl), coin))
 
     for coin in old.keys() & new.keys():
         o, n = old[coin], new[coin]
         if o.size != n.size or o.side != n.side:
-            messages.append(fmt_update(wallet, o, n))
+            messages.append((fmt_update(wallet, o, n), coin))
 
     return messages
 
@@ -82,7 +82,7 @@ class WalletMonitor:
         self,
         wallet: str,
         state: StateStore,
-        on_notify: "asyncio.Queue[str]",
+        on_notify: "asyncio.Queue[tuple[str, str | None]]",
     ) -> None:
         self.wallet = wallet
         self.state = state
@@ -163,12 +163,13 @@ class WalletMonitor:
 
             # Alert via Telegram after repeated failures
             if self._reconnect_attempts == self.ALERT_AFTER_ATTEMPTS:
-                await self.notify_queue.put(
+                await self.notify_queue.put((
                     f"⚠️ Bot Alert\n"
                     f"WebSocket disconnected for {fmt_wallet(self.wallet)}\n"
                     f"Reconnecting (attempt {self._reconnect_attempts}, "
-                    f"next retry in {wait:.1f}s)"
-                )
+                    f"next retry in {wait:.1f}s)",
+                    None,
+                ))
 
             await asyncio.sleep(wait)
             self._delay = min(self._delay * 2, config.RECONNECT_MAX_DELAY)

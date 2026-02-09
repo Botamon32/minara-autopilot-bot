@@ -43,7 +43,7 @@ def run() -> None:
     )
 
     state = StateStore(config.DB_PATH)
-    notify_queue: asyncio.Queue[str] = asyncio.Queue()
+    notify_queue: asyncio.Queue[tuple[str, str | None]] = asyncio.Queue()
     notifier = TelegramNotifier(notify_queue)
 
     # Patch post_init to also start wallet monitors

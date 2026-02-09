@@ -13,12 +13,30 @@ from .monitor import fetch_clearinghouse_state, fetch_positions
 
 log = logging.getLogger(__name__)
 
+MINARA_BASE_URL = "https://minara.ai/ja/app/trade/perps"
+
 SHORTCUT_KEYBOARD = InlineKeyboardMarkup([
     [
         InlineKeyboardButton("📊 Position", callback_data="position"),
         InlineKeyboardButton("💰 Balance", callback_data="balance"),
     ]
 ])
+
+
+def make_keyboard(coin: str | None = None) -> InlineKeyboardMarkup:
+    """Create keyboard with optional Minara trade link."""
+    buttons = [
+        InlineKeyboardButton("📊 Position", callback_data="position"),
+        InlineKeyboardButton("💰 Balance", callback_data="balance"),
+    ]
+    rows = [buttons]
+    if coin:
+        rows.append([
+            InlineKeyboardButton(
+                f"📈 {coin} on Minara", url=f"{MINARA_BASE_URL}/{coin}",
+            )
+        ])
+    return InlineKeyboardMarkup(rows)
 
 
 def authorized(update: Update) -> bool:
@@ -97,7 +115,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 class TelegramNotifier:
     """Manages Telegram bot with commands and notification queue."""
 
-    def __init__(self, notify_queue: asyncio.Queue[str]) -> None:
+    def __init__(self, notify_queue: asyncio.Queue[tuple[str, str | None]]) -> None:
         self.notify_queue = notify_queue
         self.app = (
             Application.builder()
@@ -127,13 +145,13 @@ class TelegramNotifier:
     async def _consume_notifications(self) -> None:
         """Consume messages from the queue and send to Telegram."""
         while True:
-            message = await self.notify_queue.get()
+            message, coin = await self.notify_queue.get()
             try:
                 await self.app.bot.send_message(
                     chat_id=config.TELEGRAM_CHAT_ID,
                     text=message,
                     parse_mode=ParseMode.HTML,
-                    reply_markup=SHORTCUT_KEYBOARD,
+                    reply_markup=make_keyboard(coin),
                 )
                 log.info("Notification sent: %s", message[:50])
             except Exception as e:

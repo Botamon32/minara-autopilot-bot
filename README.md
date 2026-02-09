@@ -1,8 +1,8 @@
 # HyperLiquid Position Monitor Telegram Bot
 
-HyperLiquid上の特定ウォレットのポジション変更（オープン/クローズ/更新）をリアルタイムで検知し、Telegramに通知するBotです。
+MinaraAIのAutoPilotが行うHyperLiquid上のポジション変更（オープン/クローズ/更新）をリアルタイムで検知し、Telegramに通知するBotです。
 
-**監視対象ウォレット:** `.env` で設定
+AutoPilotの監視対象ウォレットアドレスを `.env` で設定して使用します。
 
 ## 必要な環境
 
@@ -31,9 +31,10 @@ WebSocket常時接続が必要なため、**VPSやクラウドサーバー**で�
 
 ```bash
 cd ~/hyperliquid-telegram-bot
+cp .env.example .env
 ```
 
-`.env` ファイルを編集:
+`.env` ファイルを編集して各値を設定:
 
 ```
 TELEGRAM_BOT_TOKEN={your_bot_token}

@@ -193,38 +193,51 @@ async def run() -> None:
     while True:
         try:
             log.info("Connecting to WebSocket %s ...", WS_URL)
-            async with websockets.connect(WS_URL, ping_interval=20, ping_timeout=60, close_timeout=10) as ws:
+            async with websockets.connect(WS_URL, ping_interval=None) as ws:
                 await ws.send(subscribe_msg)
                 log.info("Subscribed to userEvents for %s", WALLET)
 
-                async for raw in ws:
-                    try:
-                        msg = json.loads(raw)
-                    except json.JSONDecodeError:
-                        log.warning("Non-JSON message: %s", raw[:200])
-                        continue
+                async def send_ping():
+                    """Send HyperLiquid application-level ping every 50s."""
+                    while True:
+                        await asyncio.sleep(50)
+                        await ws.send(json.dumps({"method": "ping"}))
+                        log.debug("Sent ping")
 
-                    channel = msg.get("channel")
-                    if channel != "userEvents":
-                        continue
+                ping_task = asyncio.create_task(send_ping())
+                try:
+                    async for raw in ws:
+                        try:
+                            msg = json.loads(raw)
+                        except json.JSONDecodeError:
+                            log.warning("Non-JSON message: %s", raw[:200])
+                            continue
 
-                    data = msg.get("data", {})
-                    fills = data.get("fills", [])
-                    if not fills:
-                        continue
+                        channel = msg.get("channel")
+                        if channel in ("pong", "subscriptionResponse"):
+                            continue
+                        if channel != "userEvents":
+                            continue
 
-                    log.info(
-                        "Received %d fill(s): %s",
-                        len(fills),
-                        [(f.get("coin"), f.get("side"), f.get("sz")) for f in fills],
-                    )
+                        data = msg.get("data", {})
+                        fills = data.get("fills", [])
+                        if not fills:
+                            continue
 
-                    # Small delay to let the position state settle
-                    await asyncio.sleep(1)
+                        log.info(
+                            "Received %d fill(s): %s",
+                            len(fills),
+                            [(f.get("coin"), f.get("side"), f.get("sz")) for f in fills],
+                        )
 
-                    new_positions = await fetch_positions(client)
-                    await compare_and_notify(bot, positions, new_positions)
-                    positions = new_positions
+                        # Small delay to let the position state settle
+                        await asyncio.sleep(1)
+
+                        new_positions = await fetch_positions(client)
+                        await compare_and_notify(bot, positions, new_positions)
+                        positions = new_positions
+                finally:
+                    ping_task.cancel()
 
         except websockets.ConnectionClosed as e:
             log.warning("WebSocket closed: %s. Reconnecting in 5s ...", e)
